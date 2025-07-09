@@ -1,7 +1,9 @@
+use std::{ffi::CString, fmt::Display};
+
 use anyhow::{anyhow, Result};
 
 use types::{
-    bit64::{RawEHdr64Le, RawPHdr64Le},
+    bit64::{parse_elf64, RawEHdr64Le, RawPHdr64Le},
     ElfClass, ElfData, ElfMachine, ElfType, PhdrType,
 };
 use zerocopy::FromBytes;
@@ -78,13 +80,40 @@ impl ProgramHeader {
 }
 
 #[derive(Debug)]
-pub struct ElfFile<'a> {
-    pub header: ElfHeader,
-    pub program_headers: Vec<ProgramHeader>,
+pub struct Segment<'a> {
+    pub header: ProgramHeader,
+    pub data: &'a [u8],
 }
 
-impl ElfFile {
-    pub fn new(elf_bytes: &[u8]) -> Result<Self> {
+impl<'a> Segment<'a> {
+    pub fn new(header: ProgramHeader, elf_bytes: &'a [u8]) -> Self {
+        let start = header.p_offset as usize;
+        let end = header.p_offset as usize + header.p_filesz as usize;
+        let data = &elf_bytes[start..end];
+
+        log::debug!(
+            "PT_LOAD at offset 0x{:08x}: flags=0x{:x}, vaddr=0x{:x}, filesz=0x{:x}, memsz=0x{:x}",
+            header.p_offset,
+            header.p_flags,
+            header.p_vaddr,
+            header.p_filesz,
+            header.p_memsz
+        );
+
+        Self { header, data }
+    }
+}
+
+#[derive(Debug)]
+pub struct ElfFile<'a> {
+    pub header: ElfHeader,
+    pub segments: Vec<Segment<'a>>,
+    pub pie: bool,
+    pub interp: Option<CString>,
+}
+
+impl<'a> ElfFile<'a> {
+    pub fn new(elf_bytes: &'a [u8]) -> Result<Self> {
         let e_ident = &elf_bytes[..16];
         if e_ident[0..4] != [0x7F, b'E', b'L', b'F'] {
             return Err(std::io::Error::new(
@@ -118,24 +147,19 @@ impl ElfFile {
         match (class, data) {
             (ElfClass::Elf32, ElfData::LittleEndian) => todo!(),
             (ElfClass::Elf32, ElfData::BigEndian) => todo!(),
-            (ElfClass::Elf64, ElfData::LittleEndian) => {
-                let raw_header =
-                    RawEHdr64Le::ref_from_bytes(&elf_bytes[..size_of::<RawEHdr64Le>()])
-                        .map_err(|_| anyhow!("Error parsing raw ELF header"))?;
-                let header = ElfHeader::parse_64le(raw_header);
-                let raw_program_headers = RawPHdr64Le::parse(elf_bytes, &header)
-                    .map_err(|_| anyhow!("Error parsing raw program header"))?;
-                let program_headers = raw_program_headers
-                    .iter()
-                    .map(|ph| ProgramHeader::parse_64le(ph))
-                    .collect();
-                //let program_headers = ProgramHeader::parse_64le(raw_program_headers);
-                Ok(Self {
-                    header,
-                    program_headers,
-                })
-            }
+            (ElfClass::Elf64, ElfData::LittleEndian) => parse_elf64(elf_bytes),
             (ElfClass::Elf64, ElfData::BigEndian) => todo!(),
         }
+    }
+}
+
+impl Display for ElfFile<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{:?}", self.header)?;
+        for segment in &self.segments {
+            writeln!(f, "{:?}", segment.header)?;
+        }
+        writeln!(f, "PIE: {}", self.pie)?;
+        writeln!(f, "Interpreter: {:?}", self.interp)
     }
 }
