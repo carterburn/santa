@@ -1,10 +1,7 @@
-use std::{ffi::CString, fs, pin::Pin};
+use std::fs;
 
-use crate::elf::{
-    types::{ElfMachine, ElfType, PhdrType},
-    ElfFile, ElfHeader, ProgramHeader,
-};
-use anyhow::{anyhow, Result};
+use crate::elf::ElfFile;
+use anyhow::Result;
 
 pub struct ElfExecutor {
     exe: ElfFile,

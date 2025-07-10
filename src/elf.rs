@@ -1,12 +1,11 @@
 use std::{ffi::CString, fmt::Display};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 use types::{
     bit64::{parse_elf64, RawEHdr64Le, RawPHdr64Le},
     ElfClass, ElfData, ElfMachine, ElfType, PhdrType,
 };
-use zerocopy::FromBytes;
 
 pub mod types;
 
