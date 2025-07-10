@@ -6,37 +6,29 @@ use crate::elf::{
 };
 use anyhow::{anyhow, Result};
 
-pub struct ElfExecutor<'a> {
-    exe: ElfFile<'a>,
-    ibytes: Box<Vec<u8>>,
-    interpreter: Option<ElfFile<'a>>,
+pub struct ElfExecutor {
+    exe: ElfFile,
+    interpreter: Option<ElfFile>,
 }
 
-impl<'a> ElfExecutor<'a> {
-    pub fn new(file: ElfFile<'a>) -> Result<(Vec<u8>, Self)> {
+impl ElfExecutor {
+    pub fn new(file: ElfFile) -> Result<Self> {
         match file.interp {
             Some(ref i) => {
                 let path = i.clone().into_string()?;
+                log::debug!("Dynamic executable so loading interpreter from {path}");
                 let bytes = fs::read(path)?;
-                let boxed = Box::new(bytes);
-                let interpreter = ElfFile::new(&boxed)?;
-                Ok((
-                    bytes,
-                    Self {
-                        exe: file,
-                        ibytes: boxed,
-                        interpreter: Some(interpreter),
-                    },
-                ))
-            }
-            None => Ok((
-                vec![],
-                Self {
+                let interpreter = ElfFile::new(&bytes)?;
+                log::debug!("Loaded interpreter successfully");
+                Ok(Self {
                     exe: file,
-                    ibytes: Box::new(vec![]),
-                    interpreter: None,
-                },
-            )),
+                    interpreter: Some(interpreter),
+                })
+            }
+            None => Ok(Self {
+                exe: file,
+                interpreter: None,
+            }),
         }
     }
 }

@@ -80,16 +80,16 @@ impl ProgramHeader {
 }
 
 #[derive(Debug)]
-pub struct Segment<'a> {
+pub struct Segment {
     pub header: ProgramHeader,
-    pub data: &'a [u8],
+    pub data: Vec<u8>,
 }
 
-impl<'a> Segment<'a> {
-    pub fn new(header: ProgramHeader, elf_bytes: &'a [u8]) -> Self {
+impl Segment {
+    pub fn new(header: ProgramHeader, elf_bytes: &[u8]) -> Self {
         let start = header.p_offset as usize;
         let end = header.p_offset as usize + header.p_filesz as usize;
-        let data = &elf_bytes[start..end];
+        let data = elf_bytes[start..end].to_vec();
 
         log::debug!(
             "PT_LOAD at offset 0x{:08x}: flags=0x{:x}, vaddr=0x{:x}, filesz=0x{:x}, memsz=0x{:x}",
@@ -105,15 +105,15 @@ impl<'a> Segment<'a> {
 }
 
 #[derive(Debug)]
-pub struct ElfFile<'a> {
+pub struct ElfFile {
     pub header: ElfHeader,
-    pub segments: Vec<Segment<'a>>,
+    pub segments: Vec<Segment>,
     pub pie: bool,
     pub interp: Option<CString>,
 }
 
-impl<'a> ElfFile<'a> {
-    pub fn new(elf_bytes: &'a [u8]) -> Result<Self> {
+impl ElfFile {
+    pub fn new(elf_bytes: &[u8]) -> Result<Self> {
         let e_ident = &elf_bytes[..16];
         if e_ident[0..4] != [0x7F, b'E', b'L', b'F'] {
             return Err(std::io::Error::new(
@@ -153,7 +153,7 @@ impl<'a> ElfFile<'a> {
     }
 }
 
-impl Display for ElfFile<'_> {
+impl Display for ElfFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{:?}", self.header)?;
         for segment in &self.segments {
