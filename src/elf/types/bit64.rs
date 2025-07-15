@@ -138,6 +138,7 @@ pub fn parse_elf64(elf_bytes: &[u8]) -> Result<ElfFile> {
         segments,
         pie,
         interp,
+        is_32bit: false,
     })
 }
 

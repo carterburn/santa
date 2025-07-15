@@ -109,6 +109,7 @@ pub struct ElfFile {
     pub segments: Vec<Segment>,
     pub pie: bool,
     pub interp: Option<CString>,
+    pub is_32bit: bool,
 }
 
 impl ElfFile {
