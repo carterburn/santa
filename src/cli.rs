@@ -9,6 +9,7 @@ pub struct Cli {
     /// Binary to load (can be a filepath, "-" for stdin, or a URI with --download option to fetch)
     pub binary: String,
 
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     /// Arguments to the binary
     pub args: Vec<String>,
 
