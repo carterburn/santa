@@ -144,6 +144,7 @@ cargo test
 
 # Run with logging
 RUST_LOG=info cargo run -- /bin/echo "test"
+```
 
 ## License
 
