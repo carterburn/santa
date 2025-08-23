@@ -6,12 +6,10 @@ use nix::{
 };
 use std::{
     collections::HashMap,
-    ffi::{c_char, c_void, CString},
+    ffi::{c_void, CString},
     fmt::Display,
     num::NonZeroUsize,
     ptr::NonNull,
-    rc::Rc,
-    str::FromStr,
 };
 
 use crate::elf::ElfFile;
@@ -182,7 +180,6 @@ impl From<StackOffsets> for usize {
 }
 
 pub struct Stack {
-    size: usize,
     base: NonNull<c_void>,
     stack: &'static mut [usize],
     is_32bit: bool,
@@ -217,7 +214,6 @@ impl Stack {
         log::debug!("Stack allocated at {base:08x?} ({:08x?})", stack.as_ptr());
 
         Ok(Self {
-            size,
             base,
             stack,
             is_32bit,

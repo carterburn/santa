@@ -1,11 +1,10 @@
 use std::time::Duration;
 
 use crate::{
-    elf::{types::ElfMachine, ElfFile},
+    elf::ElfFile,
     stack::{Stack, StackOffsets},
 };
 use anyhow::{anyhow, Result};
-use codegenx64::CodeGenX64;
 use nix::libc::{MAP_ANONYMOUS, MAP_PRIVATE, PF_R, PF_W, PF_X, PROT_EXEC, PROT_READ, PROT_WRITE};
 
 pub mod codegenx64;

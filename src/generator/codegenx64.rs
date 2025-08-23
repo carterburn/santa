@@ -1,6 +1,6 @@
-use std::{str::from_utf8, time::Duration};
+use std::time::Duration;
 
-use crate::{elf::ElfFile, stack::Stack};
+use crate::stack::Stack;
 
 use super::CodeGenerator;
 
@@ -39,9 +39,7 @@ impl CodeGenerator for CodeGenX64 {
         code
     }
 
-    fn mprotect(&self, addr: usize, length: usize, prot: u32) {
-        ()
-    }
+    fn mprotect(&self, _addr: usize, _length: usize, _prot: u32) {}
 
     fn generate_jumpcode(
         &self,

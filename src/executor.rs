@@ -5,6 +5,7 @@ use std::{
     io::Write,
     num::NonZeroUsize,
     ptr::copy_nonoverlapping,
+    time::Duration,
 };
 
 use crate::{
@@ -47,7 +48,13 @@ impl ElfExecutor {
         }
     }
 
-    pub fn execute(&mut self, args: &Vec<String>) -> Result<()> {
+    pub fn execute(
+        &mut self,
+        args: &Vec<String>,
+        show_stack: bool,
+        show_jumpbuf: bool,
+        jump_delay: Option<Duration>,
+    ) -> Result<()> {
         let mut stack = Stack::new(2048, self.exe.is_32bit)?;
         let mut argv = vec![CString::new(self.name.clone())?];
         for arg in args {
@@ -65,19 +72,18 @@ impl ElfExecutor {
         }
         .to_string();
 
-        stack.setup(&argv, &envp, &self.exe, &platform, true)?;
+        stack.setup(&argv, &envp, &self.exe, &platform, show_stack)?;
 
         let mut generator = match self.exe.header.e_machine {
             ElfMachine::X86_64 => CodeGen::new(&self.exe, self.interpreter.as_ref(), CodeGenX64)?,
             _ => Err(anyhow!("Unsupported architecture"))?,
         };
 
-        // need to carry on a jump_delay
-        let code = generator.generate(&mut stack, None)?;
+        let code = generator.generate(&mut stack, jump_delay)?;
 
-        // we should make an option to not show the jumpbuf, but we'll remove it unless we are
-        // going to need it for debugging
-        display_jumpbuf(self.exe.header.e_machine, &code)?;
+        if show_jumpbuf {
+            display_jumpbuf(self.exe.header.e_machine, &code)?;
+        }
 
         // get a new mapping for our jump code to live
         let base = unsafe {

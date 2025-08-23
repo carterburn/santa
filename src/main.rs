@@ -54,7 +54,12 @@ fn main() -> Result<()> {
     let elf = ElfFile::new(&bytes)?;
     let mut executor = ElfExecutor::new(elf, path.to_string())?;
     log::debug!("Args: {:?}", args.args);
-    executor.execute(&args.args)?;
+    executor.execute(
+        &args.args,
+        args.show_stack,
+        args.show_jumpbuf,
+        args.jump_delay,
+    )?;
 
     Ok(())
 }
