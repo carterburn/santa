@@ -163,11 +163,30 @@ impl From<AuxValues> for usize {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum StackOffsets {
+    OffsetAtBase = 1,
+    OffsetAtPhdr = 3,
+    OffsetAtEntry = 5,
+}
+
+impl From<StackOffsets> for usize {
+    fn from(value: StackOffsets) -> Self {
+        use StackOffsets::*;
+        match value {
+            OffsetAtBase => 1,
+            OffsetAtPhdr => 3,
+            OffsetAtEntry => 5,
+        }
+    }
+}
+
 pub struct Stack {
     size: usize,
     base: NonNull<c_void>,
     stack: &'static mut [usize],
     is_32bit: bool,
+    auxv_start: usize,
 }
 
 impl Stack {
@@ -202,10 +221,19 @@ impl Stack {
             base,
             stack,
             is_32bit,
+            auxv_start: 0,
         })
     }
 
-    fn get_page_size() -> Result<usize> {
+    pub fn raw_stack(&mut self) -> &mut [usize] {
+        self.stack
+    }
+
+    pub fn base(&self) -> NonNull<c_void> {
+        self.base
+    }
+
+    pub fn get_page_size() -> Result<usize> {
         Ok(nix::unistd::sysconf(nix::unistd::SysconfVar::PAGE_SIZE)?
             .ok_or_else(|| anyhow!("Could not retrieve system page size"))?
             .try_into()?)
@@ -237,10 +265,15 @@ impl Stack {
         i += 1;
 
         let aux_off = i + env_off;
+        self.auxv_start = aux_off << (if self.is_32bit { 2 } else { 3 });
         let end_off = self.setup_auxv(aux_off, exe, platform)?;
 
         log::debug!("end_off: {end_off}");
         self.show_stack(env_off, aux_off, end_off, show_stack)
+    }
+
+    pub fn auxv_start(&self) -> usize {
+        self.auxv_start
     }
 
     fn show_stack(

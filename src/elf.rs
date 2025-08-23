@@ -1,6 +1,6 @@
 use std::{ffi::CString, fmt::Display};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 use types::{
     bit64::{parse_elf64, RawEHdr64Le, RawPHdr64Le},
@@ -150,6 +150,33 @@ impl ElfFile {
             (ElfClass::Elf64, ElfData::LittleEndian) => parse_elf64(elf_bytes),
             (ElfClass::Elf64, ElfData::BigEndian) => todo!(),
         }
+    }
+
+    pub fn memory_size(&self) -> Result<usize> {
+        let mut size = 0;
+        for segment in &self.segments {
+            let (vaddr, memsz) = (segment.header.p_vaddr, segment.header.p_memsz);
+            size = if (vaddr + memsz) > size {
+                vaddr + memsz
+            } else {
+                size
+            };
+        }
+
+        if !self.pie {
+            let adjustment = self
+                .segments
+                .first()
+                .ok_or(anyhow!("No segments in ELF"))?
+                .header
+                .p_vaddr;
+            log::debug!("Not a PIE binary so adjusting size down with {adjustment:08x}");
+            size -= adjustment;
+        }
+
+        log::debug!("Total calculated memory size: {size:08x?}");
+
+        Ok(size.try_into()?)
     }
 }
 

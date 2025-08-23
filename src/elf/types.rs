@@ -37,7 +37,7 @@ impl From<u16> for ElfType {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[repr(u16)]
 pub enum ElfMachine {
     None = 0,

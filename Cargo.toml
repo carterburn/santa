@@ -6,7 +6,8 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.98"
 auxv = "0.3.3"
+clap = { version = "4.5.45", features = ["derive"] }
 env_logger = "0.11.8"
 log = "0.4.27"
-nix = { version = "0.30.1", features = ["feature", "mman", "user"] }
+nix = { version = "0.30.1", features = ["feature", "mman", "user", "fs"] }
 zerocopy = { version = "0.8.26", features = ["derive", "std"] }
