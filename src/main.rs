@@ -3,6 +3,7 @@ use std::{
     fs,
     io::{self, Read},
 };
+use ureq::http::StatusCode;
 
 use clap::Parser;
 use env_logger::Env;
@@ -13,38 +14,47 @@ fn main() -> Result<()> {
 
     let args = Cli::parse();
 
-    let bytes = if args.fetch {
+    let (path, bytes) = if args.fetch {
         log::debug!("Downloading from {}", args.binary);
         if !args.binary.starts_with("http://") && !args.binary.starts_with("https://") {
             return Err(anyhow!("Only http/https URIs allowed"));
         }
-        vec![]
+        let response = ureq::get(&args.binary).call()?;
+        let (parts, body) = response.into_parts();
+        if !matches!(parts.status, StatusCode::OK) {
+            return Err(anyhow!(
+                "Error retrieving binary. HTTP status: {}",
+                parts.status
+            ));
+        }
+        let mut bytes = Vec::new();
+        body.into_reader().read_to_end(&mut bytes)?;
+        (
+            args.binary
+                .split("/")
+                .last()
+                .ok_or(anyhow!("No binary provided"))?,
+            bytes,
+        )
     } else {
         match args.binary.as_str() {
             "-" => {
                 log::debug!("Reading from stdin");
                 let mut buffer = Vec::new();
                 io::stdin().read_to_end(&mut buffer)?;
-                buffer
+                ("stdin", buffer)
             }
             path => {
                 log::debug!("Reading from file {path}");
-                fs::read(path)?
+                (path, fs::read(path)?)
             }
         }
     };
-    //let bytes = fs::read("/bin/echo")?;
-    //let bytes = fs::read("/bin/ls")?;
-    //let bytes = fs::read("/home/carter/.fly/bin/flyctl")?;
-    //let bytes = fs::read("/home/carter/work/santa/templates/non_pie")?;
-    //let bytes = fs::read("/home/carter/work/lighthouse/target/debug/lighthouse-agent")?;
 
     let elf = ElfFile::new(&bytes)?;
-    let mut executor = ElfExecutor::new(elf, "/bin/echo".to_string())?;
-    //let args = vec!["hello".to_string()];
-    //let args = vec!["/".to_string()];
-    let args = vec![];
-    executor.execute(&args)?;
+    let mut executor = ElfExecutor::new(elf, path.to_string())?;
+    log::debug!("Args: {:?}", args.args);
+    executor.execute(&args.args)?;
 
     Ok(())
 }

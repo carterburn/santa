@@ -9,6 +9,9 @@ pub struct Cli {
     /// Binary to load (can be a filepath, "-" for stdin, or a URI with --download option to fetch)
     pub binary: String,
 
+    /// Arguments to the binary
+    pub args: Vec<String>,
+
     #[arg(short = 'd', long, value_parser = parse_duration)]
     /// Delay jump to loaded ELF for <JUMP_DELAY> seconds for debugging
     pub jump_delay: Option<Duration>,

@@ -1,5 +1,6 @@
 use core::str;
 use std::{
+    ffi::CString,
     fs::{self, File},
     io::Write,
     num::NonZeroUsize,
@@ -48,12 +49,12 @@ impl ElfExecutor {
 
     pub fn execute(&mut self, args: &Vec<String>) -> Result<()> {
         let mut stack = Stack::new(2048, self.exe.is_32bit)?;
-        let mut argv = vec![self.name.clone()];
+        let mut argv = vec![CString::new(self.name.clone())?];
         for arg in args {
-            argv.push(arg.to_string());
+            argv.push(CString::new(arg.to_string())?);
         }
-        let envp: Vec<String> = std::env::vars()
-            .map(|(key, value)| format!("{}={}", key, value))
+        let envp: Vec<CString> = std::env::vars()
+            .filter_map(|(key, value)| CString::new(format!("{}={}", key, value)).ok())
             .collect();
 
         let platform = match self.exe.header.e_machine {
@@ -106,9 +107,6 @@ impl ElfExecutor {
             let fn_ptr: fn() = std::mem::transmute(base.as_ptr());
             fn_ptr();
         }
-
-        // not going to reach here!
-        log::debug!("Break here");
 
         Ok(())
     }

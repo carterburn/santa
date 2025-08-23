@@ -241,8 +241,8 @@ impl Stack {
 
     pub fn setup(
         &mut self,
-        argv: &Vec<String>,
-        envp: &Vec<String>,
+        argv: &Vec<CString>,
+        envp: &Vec<CString>,
         exe: &ElfFile,
         platform: &str,
         show_stack: bool,
