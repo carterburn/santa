@@ -1,3 +1,7 @@
+// Derived from ulexecve (https://github.com/anvilsecure/ulexecve)
+// Copyright (c) 2021-2023 Anvil Secure Inc.
+// Licensed under the BSD-3-Clause License
+// See the LICENSE file in the repository root for the license disclaimer.
 use std::time::Duration;
 
 use crate::stack::Stack;
@@ -5,6 +9,12 @@ use crate::stack::Stack;
 use super::CodeGenerator;
 
 pub struct CodeGenX64;
+
+/*
+ * Assembly code snippets were taken verbatim from ulexecve.py referenced in the README and LICENSE.
+ * These snippets are pretty straightforward, just taking in arguments and calling various system
+ * calls or doing memcpy in assembly.
+ */
 
 impl CodeGenerator for CodeGenX64 {
     fn mmap(&self, addr: usize, length: usize, prot: u32, flags: u32, offset: usize) -> Vec<u8> {

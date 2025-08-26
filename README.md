@@ -148,11 +148,12 @@ RUST_LOG=info cargo run -- /bin/echo "test"
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. This project also includes a clause on its use of a BSD-3-Clause project's code.
 
 ## Acknowledgments
 
 - Inspired by userland exec research and in-memory loading techniques
+- Inspired heavily by the python implementation of [ulexecve](https://github.com/anvilsecure/ulexecve/tree/main). Their implementation is heavily inspired by previous userland exec approachs (such as grugq's The Design and Implementation of Userland Exec and Phrack 62). The code is generally modeled after the python version but this implementation is original and written in Rust (except the assembly snippets where credit is given).
 - Built with Rust's memory safety guarantees for secure execution
 - Thanks to the ELF specification maintainers and reverse engineering community
 
