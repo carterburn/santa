@@ -117,4 +117,14 @@ impl CodeGenerator for CodeGenX64 {
         code.extend_from_slice(b"\x4d\x89\x37");
         code
     }
+
+    fn fill_zero(&self, offset: usize, sz: usize) -> Vec<u8> {
+        let mut code = Vec::new();
+        code.extend_from_slice(b"\x48\xbf");
+        code.extend_from_slice(&offset.to_le_bytes());
+        code.extend_from_slice(b"\x4c\x01\xdf\x48\xb9");
+        code.extend_from_slice(&sz.to_le_bytes());
+        code.extend_from_slice(b"\x48\x31\xc0\xf3\xaa");
+        code
+    }
 }

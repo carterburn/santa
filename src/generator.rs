@@ -13,6 +13,7 @@ pub trait CodeGenerator {
     fn mprotect(&self, addr: usize, length: usize, prot: u32);
     fn munmap(&self, addr: usize, length: usize) -> Vec<u8>;
     fn memcpy_from_offset(&self, offset: usize, src: usize, sz: usize) -> Vec<u8>;
+    fn fill_zero(&self, offset: usize, sz: usize) -> Vec<u8>;
     fn mmap(&self, addr: usize, length: usize, prot: u32, flags: u32, offset: usize) -> Vec<u8>;
     fn generate_auxv_fixup(
         &self,
@@ -146,6 +147,15 @@ impl<'a, T: CodeGenerator> CodeGen<'a, T> {
                 self.generator
                     .memcpy_from_offset(vaddr.try_into()?, src, sz.try_into()?),
             );
+
+            // if memsz > filesz, have to zero out the rest
+            if e.header.p_memsz > e.header.p_filesz {
+                log::debug!("Generating fill zero for bss section present in ELF");
+                code.extend(self.generator.fill_zero(
+                    (vaddr + e.header.p_filesz).try_into()?,
+                    (e.header.p_memsz - e.header.p_filesz).try_into()?,
+                ))
+            }
 
             let mut prot = if flags & PF_R != 0 { PROT_READ } else { 0 };
             prot |= if flags & PF_W != 0 { PROT_WRITE } else { 0 };
