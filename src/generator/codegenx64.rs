@@ -34,6 +34,7 @@ impl CodeGenerator for CodeGenX64 {
         code.extend_from_slice(b"\x49\xc7\xc1");
         code.extend_from_slice(&offset.to_le_bytes());
         code.extend_from_slice(b"\x0f\x05\x50\x4c\x8b\x1c\x24");
+        //code.extend_from_slice(b"\x0f\x05\x50\x4c\x8b\x24\x24");
 
         log::debug!("Generated mmap call (addr={addr:#08x}, length={length:#08x}, prot={prot:#x}, flags={flags:#x})");
         code
@@ -49,12 +50,23 @@ impl CodeGenerator for CodeGenX64 {
         code
     }
 
-    fn mprotect(&self, _addr: usize, _length: usize, _prot: u32) {}
+    fn mprotect(&self, addr: usize, length: usize, prot: u32) -> Vec<u8> {
+        let mut code = Vec::with_capacity(36);
+        code.extend_from_slice(b"\x48\xc7\xc0\x0a\x00\x00\x00\x48\xbf");
+        code.extend_from_slice(&addr.to_le_bytes());
+        code.extend_from_slice(b"\x48\xbe");
+        code.extend_from_slice(&length.to_le_bytes());
+        code.extend_from_slice(b"\x48\xc7\xc2");
+        code.extend_from_slice(&prot.to_le_bytes());
+        code.extend_from_slice(b"\x0f\x05");
+        code
+    }
 
     fn generate_jumpcode(
         &self,
         stack: &mut Stack,
         entry_ptr: usize,
+        tls: Option<usize>,
         jump_delay: Option<Duration>,
     ) -> Vec<u8> {
         let mut code = Vec::new();
@@ -64,6 +76,14 @@ impl CodeGenerator for CodeGenX64 {
             code.extend_from_slice(
                 b"\x48\x89\xe7\x48\xc7\xc0\x23\x00\x00\x00\x41\x53\x0f\x05\x41\x5b",
             );
+        }
+        // if there is a TLS segment, set the fs_base register before we do this
+        if let Some(tls_addr) = tls {
+            code.extend_from_slice(
+                b"\x48\xc7\xc0\x9e\x00\x00\x00\x48\xc7\xc7\x02\x10\x00\x00\x48\xbe",
+            );
+            code.extend_from_slice(&tls_addr.to_le_bytes());
+            code.extend_from_slice(b"\x0f\x05");
         }
         let regs = [0xc0, 0xdb, 0xc9, 0xd2, 0xed, 0xe4, 0xf6, 0xff];
         for reg in regs {
@@ -77,6 +97,7 @@ impl CodeGenerator for CodeGenX64 {
         // since this is x64, this will be a u64, but on x86, we'll need to move to u32
         code.extend_from_slice(&entry_ptr.to_le_bytes());
         code.extend_from_slice(b"\x4c\x01\xd9\x48\x31\xd2\xff\xe1");
+        //code.extend_from_slice(b"\x4c\x01\xe1\x48\x31\xd2\xff\xe1");
 
         log::debug!("Jumpbuf with entry %r11+{entry_ptr:#08x} and stack: {stack_ptr:#16x?}");
         code
@@ -89,6 +110,7 @@ impl CodeGenerator for CodeGenX64 {
         code.extend_from_slice(b"\x48\xbf");
         code.extend_from_slice(&offset.to_le_bytes());
         code.extend_from_slice(b"\x4c\x01\xdf\x48\xb9");
+        //code.extend_from_slice(b"\x4c\x01\xe7\x48\xb9");
         code.extend_from_slice(&sz.to_le_bytes());
         code.extend_from_slice(b"\xf3\xa4");
 
@@ -111,6 +133,7 @@ impl CodeGenerator for CodeGenX64 {
         code.extend_from_slice(&map_offset.to_le_bytes());
         if relative {
             code.extend_from_slice(b"\x4d\x01\xde");
+            //code.extend_from_slice(b"\x4d\x01\xde");
         }
         code.extend_from_slice(b"\x49\xbf");
         code.extend_from_slice(&auxv_ptr.to_le_bytes());
@@ -123,6 +146,7 @@ impl CodeGenerator for CodeGenX64 {
         code.extend_from_slice(b"\x48\xbf");
         code.extend_from_slice(&offset.to_le_bytes());
         code.extend_from_slice(b"\x4c\x01\xdf\x48\xb9");
+        //code.extend_from_slice(b"\x4c\x01\xe7\x48\xb9");
         code.extend_from_slice(&sz.to_le_bytes());
         code.extend_from_slice(b"\x48\x31\xc0\xf3\xaa");
         code

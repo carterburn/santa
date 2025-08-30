@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use zerocopy::*;
 
 pub mod bit32;
@@ -95,7 +97,7 @@ impl From<u16> for ElfMachine {
     }
 }
 
-#[derive(Copy, Clone, Debug, TryFromBytes, IntoBytes, KnownLayout, Immutable)]
+#[derive(Copy, Clone, Debug, PartialEq, TryFromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(u32)]
 #[allow(dead_code)]
 pub enum PhdrType {
@@ -144,6 +146,33 @@ impl From<u32> for PhdrType {
             0x70000000 => LoProc,
             0x7fffffff => HiProc,
             _ => Null,
+        }
+    }
+}
+
+impl Display for PhdrType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use PhdrType::*;
+        match self {
+            Null => write!(f, "PT_NULL"),
+            Load => write!(f, "PT_LOAD"),
+            Dynamic => write!(f, "PT_DYNAMIC"),
+            Interp => write!(f, "PT_INTERP"),
+            Note => write!(f, "PT_NOTE"),
+            Shlib => write!(f, "PT_SHLIB"),
+            Phdr => write!(f, "PT_PHDR"),
+            Tls => write!(f, "PT_TLS"),
+            Num => write!(f, "PT_NUM"),
+            Loos => write!(f, "PT_LOOS"),
+            GnuEhFrame => write!(f, "PT_GNU_EH_FRAME"),
+            GnuStack => write!(f, "PT_GNU_STACK"),
+            GnuRelro => write!(f, "PT_GNU_RELRO"),
+            GnuProperty => write!(f, "PT_GNU_PROPERTY"),
+            Losunw => write!(f, "PT_LOSUNW"),
+            SunwStack => write!(f, "PT_SUNWSTACK"),
+            HiSunw => write!(f, "PT_HISUNW"),
+            LoProc => write!(f, "PT_LOPROC"),
+            HiProc => write!(f, "PT_HIPROC"),
         }
     }
 }

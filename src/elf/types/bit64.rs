@@ -98,6 +98,9 @@ pub fn parse_elf64(elf_bytes: &[u8]) -> Result<ElfFile> {
 
                 segments.push(Segment::new(p_header, elf_bytes));
             }
+            super::PhdrType::Tls => {
+                segments.push(Segment::new(p_header, elf_bytes));
+            }
             super::PhdrType::Interp => {
                 let start = p_header.p_offset as usize;
                 let interpreter_path = CString::from_vec_with_nul(

@@ -91,7 +91,8 @@ impl Segment {
         let data = elf_bytes[start..end].to_vec();
 
         log::debug!(
-            "PT_LOAD at offset 0x{:08x}: flags=0x{:x}, vaddr=0x{:x}, filesz=0x{:x}, memsz=0x{:x}",
+            "{} at offset 0x{:08x}: flags=0x{:x}, vaddr=0x{:x}, filesz=0x{:x}, memsz=0x{:x}",
+            header.p_type,
             header.p_offset,
             header.p_flags,
             header.p_vaddr,

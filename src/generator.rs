@@ -10,7 +10,7 @@ use nix::libc::{MAP_ANONYMOUS, MAP_PRIVATE, PF_R, PF_W, PF_X, PROT_EXEC, PROT_RE
 pub mod codegenx64;
 
 pub trait CodeGenerator {
-    fn mprotect(&self, addr: usize, length: usize, prot: u32);
+    fn mprotect(&self, addr: usize, length: usize, prot: u32) -> Vec<u8>;
     fn munmap(&self, addr: usize, length: usize) -> Vec<u8>;
     fn memcpy_from_offset(&self, offset: usize, src: usize, sz: usize) -> Vec<u8>;
     fn fill_zero(&self, offset: usize, sz: usize) -> Vec<u8>;
@@ -26,6 +26,7 @@ pub trait CodeGenerator {
         &self,
         stack: &mut Stack,
         entry_ptr: usize,
+        tls: Option<usize>,
         jump_delay: Option<Duration>,
     ) -> Vec<u8>;
 }
@@ -70,12 +71,17 @@ impl<'a, T: CodeGenerator> CodeGen<'a, T> {
         let entry_point = match self.interp {
             Some(interpreter) => {
                 code.extend_from_slice(&self.generate_elf_loader(interpreter)?);
-                code.extend_from_slice(&self.generator.generate_auxv_fixup(
-                    stack,
-                    StackOffsets::OffsetAtBase.into(),
-                    0,
-                    true,
-                ));
+                if !matches!(
+                    self.file.header.e_type,
+                    crate::elf::types::ElfType::Executable
+                ) {
+                    code.extend_from_slice(&self.generator.generate_auxv_fixup(
+                        stack,
+                        StackOffsets::OffsetAtBase.into(),
+                        0,
+                        true,
+                    ));
+                }
                 interpreter.header.e_entry
             }
             None => {
@@ -99,9 +105,17 @@ impl<'a, T: CodeGenerator> CodeGen<'a, T> {
             stack.base()
         );
 
+        let tls_addr = self
+            .file
+            .segments
+            .iter()
+            .find(|s| s.header.p_type == crate::elf::types::PhdrType::Tls)
+            .map(|segment| (segment.header.p_vaddr + segment.header.p_memsz) as usize);
+
         code.extend_from_slice(&self.generator.generate_jumpcode(
             stack,
             entry_point.try_into()?,
+            tls_addr,
             jump_delay,
         ));
 
@@ -134,7 +148,11 @@ impl<'a, T: CodeGenerator> CodeGen<'a, T> {
                 .mmap(addr, size, protections.try_into()?, flags.try_into()?, 0),
         );
 
-        for e in &file.segments {
+        for e in file
+            .segments
+            .iter()
+            .filter(|e| e.header.p_type == crate::elf::types::PhdrType::Load)
+        {
             let src = e.data.as_ptr().addr();
             let sz = e.header.p_filesz;
             let mut vaddr = e.header.p_vaddr;
@@ -163,7 +181,11 @@ impl<'a, T: CodeGenerator> CodeGen<'a, T> {
             _ = prot;
 
             // ulexecve.py didn't use this, but I'm pretty sure it is necessary...
-            // code.extend(self.generator.mprotect(vaddr, page_ceil(memsz), prot))
+            code.extend(self.generator.mprotect(
+                vaddr.try_into()?,
+                page_ceil(e.header.p_memsz.try_into()?)?,
+                prot.try_into()?,
+            ))
         }
 
         Ok(code)
