@@ -33,8 +33,8 @@ impl CodeGenerator for CodeGenX64 {
         code.extend_from_slice(&fd.to_le_bytes());
         code.extend_from_slice(b"\x49\xc7\xc1");
         code.extend_from_slice(&offset.to_le_bytes());
-        code.extend_from_slice(b"\x0f\x05\x50\x4c\x8b\x1c\x24");
-        //code.extend_from_slice(b"\x0f\x05\x50\x4c\x8b\x24\x24");
+        //code.extend_from_slice(b"\x0f\x05\x50\x4c\x8b\x1c\x24");
+        code.extend_from_slice(b"\x0f\x05\x50\x4c\x8b\x24\x24");
 
         log::debug!("Generated mmap call (addr={addr:#08x}, length={length:#08x}, prot={prot:#x}, flags={flags:#x})");
         code
@@ -96,8 +96,8 @@ impl CodeGenerator for CodeGenX64 {
         code.extend_from_slice(b"\x48\xb9");
         // since this is x64, this will be a u64, but on x86, we'll need to move to u32
         code.extend_from_slice(&entry_ptr.to_le_bytes());
-        code.extend_from_slice(b"\x4c\x01\xd9\x48\x31\xd2\xff\xe1");
-        //code.extend_from_slice(b"\x4c\x01\xe1\x48\x31\xd2\xff\xe1");
+        //code.extend_from_slice(b"\x4c\x01\xd9\x48\x31\xd2\xff\xe1");
+        code.extend_from_slice(b"\x4c\x01\xe1\x48\x31\xd2\xff\xe1");
 
         log::debug!("Jumpbuf with entry %r11+{entry_ptr:#08x} and stack: {stack_ptr:#16x?}");
         code
@@ -109,8 +109,8 @@ impl CodeGenerator for CodeGenX64 {
         code.extend_from_slice(&src.to_le_bytes());
         code.extend_from_slice(b"\x48\xbf");
         code.extend_from_slice(&offset.to_le_bytes());
-        code.extend_from_slice(b"\x4c\x01\xdf\x48\xb9");
-        //code.extend_from_slice(b"\x4c\x01\xe7\x48\xb9");
+        //code.extend_from_slice(b"\x4c\x01\xdf\x48\xb9");
+        code.extend_from_slice(b"\x4c\x01\xe7\x48\xb9");
         code.extend_from_slice(&sz.to_le_bytes());
         code.extend_from_slice(b"\xf3\xa4");
 
@@ -132,8 +132,8 @@ impl CodeGenerator for CodeGenX64 {
         code.extend_from_slice(b"\x49\xbe");
         code.extend_from_slice(&map_offset.to_le_bytes());
         if relative {
-            code.extend_from_slice(b"\x4d\x01\xde");
             //code.extend_from_slice(b"\x4d\x01\xde");
+            code.extend_from_slice(b"\x4d\x01\xe6");
         }
         code.extend_from_slice(b"\x49\xbf");
         code.extend_from_slice(&auxv_ptr.to_le_bytes());
@@ -145,8 +145,8 @@ impl CodeGenerator for CodeGenX64 {
         let mut code = Vec::new();
         code.extend_from_slice(b"\x48\xbf");
         code.extend_from_slice(&offset.to_le_bytes());
-        code.extend_from_slice(b"\x4c\x01\xdf\x48\xb9");
-        //code.extend_from_slice(b"\x4c\x01\xe7\x48\xb9");
+        //code.extend_from_slice(b"\x4c\x01\xdf\x48\xb9");
+        code.extend_from_slice(b"\x4c\x01\xe7\x48\xb9");
         code.extend_from_slice(&sz.to_le_bytes());
         code.extend_from_slice(b"\x48\x31\xc0\xf3\xaa");
         code
