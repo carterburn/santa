@@ -7,7 +7,12 @@ use ureq::http::StatusCode;
 
 use clap::Parser;
 use env_logger::Env;
-use santa::{cli::Cli, elf::ElfFile, executor::ElfExecutor};
+use santa::{
+    cli::Cli,
+    elf::ElfFile,
+    exec::{self, load},
+    executor::ElfExecutor,
+};
 
 fn main() -> Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
@@ -52,6 +57,10 @@ fn main() -> Result<()> {
     };
 
     let elf = ElfFile::new(&bytes)?;
+    exec::exec(&elf, &args.args)?;
+    log::debug!("Loaded");
+
+    /*
     let mut executor = ElfExecutor::new(elf, path.to_string())?;
     log::debug!("Args: {:?}", args.args);
     executor.execute(
@@ -60,6 +69,7 @@ fn main() -> Result<()> {
         args.show_jumpbuf,
         args.jump_delay,
     )?;
+    */
 
     Ok(())
 }
