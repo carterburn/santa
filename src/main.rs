@@ -10,8 +10,7 @@ use env_logger::Env;
 use santa::{
     cli::Cli,
     elf::ElfFile,
-    exec::{self, load},
-    executor::ElfExecutor,
+    exec::{self},
 };
 
 fn main() -> Result<()> {
@@ -57,7 +56,7 @@ fn main() -> Result<()> {
     };
 
     let elf = ElfFile::new(&bytes)?;
-    exec::exec(&elf, &args.args)?;
+    exec::exec(&elf, &args.args, path)?;
     log::debug!("Loaded");
 
     /*

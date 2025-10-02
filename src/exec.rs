@@ -1,20 +1,20 @@
-use std::{num::NonZeroUsize, ptr::copy_nonoverlapping};
+use std::{arch::asm, num::NonZeroUsize, ptr::copy_nonoverlapping};
 
-use crate::elf::ElfFile;
+use crate::{elf::ElfFile, stack::Stack};
 use anyhow::{anyhow, Result};
 use nix::{
     libc::{PF_R, PF_W, PF_X},
     sys::mman::{mmap_anonymous, mprotect, MapFlags, ProtFlags},
 };
 
-pub fn load(file: &ElfFile) -> Result<(usize, Option<usize>)> {
+pub fn load(file: &ElfFile) -> Result<(usize, Option<(usize, usize)>)> {
     let interp_addr = match &file.interp {
         Some(path) => {
             let path = path.clone().into_string()?;
             let bytes = std::fs::read(path)?;
             let interpreter = ElfFile::new(&bytes)?;
             let (interp_addr, _) = load(&interpreter)?;
-            Some(interp_addr)
+            Some((interp_addr, interpreter.header.e_entry.try_into()?))
         }
         None => None,
     };
@@ -27,7 +27,10 @@ pub fn load(file: &ElfFile) -> Result<(usize, Option<usize>)> {
     }
 }
 
-pub fn load_pie(file: &ElfFile, interp_addr: Option<usize>) -> Result<(usize, Option<usize>)> {
+pub fn load_pie(
+    file: &ElfFile,
+    interp_addr: Option<(usize, usize)>,
+) -> Result<(usize, Option<(usize, usize)>)> {
     let total_size: usize = file
         .segments
         .iter()
@@ -112,12 +115,38 @@ pub fn load_pie(file: &ElfFile, interp_addr: Option<usize>) -> Result<(usize, Op
 
 pub fn load_non_pie(
     _file: &ElfFile,
-    _interp_addr: Option<usize>,
-) -> Result<(usize, Option<usize>)> {
+    _interp_addr: Option<(usize, usize)>,
+) -> Result<(usize, Option<(usize, usize)>)> {
     unimplemented!()
 }
 
-pub fn exec(file: &ElfFile, args: &[String]) -> Result<()> {
+pub fn exec(file: &ElfFile, args: &[String], path: &str) -> Result<()> {
+    // interp = Option<(usize, usize)> -> (interp_base, interp_entry)
     let (base_addr, interp) = load(file)?;
-    Ok(())
+
+    let mut stack = Stack::new(base_addr, interp, file, path, args);
+    let sp = stack.make()?;
+
+    let entry = match interp {
+        Some((interp_base, interp_entry)) => interp_base + interp_entry,
+        None => {
+            let entry: usize = file.header.e_entry.try_into()?;
+            base_addr + entry
+        }
+    };
+
+    unsafe { run(entry, sp) }
+}
+
+unsafe fn run(entry: usize, sp: usize) -> ! {
+    unsafe {
+        asm! {
+            "mov rsp, {sp}",
+            "jmp {entry}",
+            inout("rax") 0 => _,
+            sp = in(reg) sp,
+            entry = in(reg) entry,
+        }
+    }
+    unreachable!();
 }
