@@ -173,7 +173,6 @@ impl ElfFile {
             log::debug!("Not a PIE binary so adjusting size down with {adjustment:08x}");
             size -= adjustment;
         }
-
         log::debug!("Total calculated memory size: {size:08x?}");
 
         Ok(size.try_into()?)

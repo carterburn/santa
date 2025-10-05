@@ -44,6 +44,7 @@ fn main() -> Result<()> {
         match args.binary.as_str() {
             "-" => {
                 log::debug!("Reading from stdin");
+
                 let mut buffer = Vec::new();
                 io::stdin().read_to_end(&mut buffer)?;
                 ("stdin", buffer)
@@ -57,18 +58,6 @@ fn main() -> Result<()> {
 
     let elf = ElfFile::new(&bytes)?;
     exec::exec(&elf, &args.args, path)?;
-    log::debug!("Loaded");
-
-    /*
-    let mut executor = ElfExecutor::new(elf, path.to_string())?;
-    log::debug!("Args: {:?}", args.args);
-    executor.execute(
-        &args.args,
-        args.show_stack,
-        args.show_jumpbuf,
-        args.jump_delay,
-    )?;
-    */
 
     Ok(())
 }

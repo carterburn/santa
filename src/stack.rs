@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use nix::{
     libc::{
         getauxval, AT_BASE, AT_CLKTCK, AT_EGID, AT_ENTRY, AT_EUID, AT_EXECFN, AT_FLAGS, AT_GID,
@@ -9,10 +9,10 @@ use nix::{
     unistd::{getegid, geteuid, getgid, getuid, sysconf, SysconfVar},
 };
 use std::{
-    ffi::{c_void, CStr, CString},
+    ffi::{CStr, CString},
     fmt::Display,
     num::NonZeroUsize,
-    ptr::{copy_nonoverlapping, NonNull},
+    ptr::copy_nonoverlapping,
 };
 
 use crate::elf::ElfFile;
@@ -170,7 +170,6 @@ pub struct Stack<'a> {
     file: &'a ElfFile,
     path: &'a str,
     args: &'a [String],
-    stack: NonNull<c_void>,
     stack_end: usize,
     reversed: Vec<u8>,
 }
@@ -193,7 +192,6 @@ impl<'a> Stack<'a> {
             )
         }
         .unwrap();
-
         log::debug!("Allocated stack at {stack:#08x?}");
 
         let stack_end = stack.addr().get() + length;
@@ -205,7 +203,6 @@ impl<'a> Stack<'a> {
             file,
             path,
             args,
-            stack,
             stack_end,
             reversed: Vec::new(),
         }
@@ -262,7 +259,19 @@ impl<'a> Stack<'a> {
             .try_into()?;
 
         let e_entry: usize = self.file.header.e_entry.try_into()?;
-        let e_phoff: usize = self.file.header.e_phoff.try_into()?;
+        let mut e_phoff: usize = self.file.header.e_phoff.try_into()?;
+        if self.binary_addr == 0 {
+            // adjust ph_off if we have a non-pie binary
+            let start: usize = self
+                .file
+                .segments
+                .first()
+                .ok_or(anyhow!("No segments"))?
+                .header
+                .p_vaddr
+                .try_into()?;
+            e_phoff += start;
+        }
 
         let auxv_rev = [
             (AT_NULL, 0),
@@ -340,8 +349,6 @@ impl<'a> Stack<'a> {
         self.reversed.reverse();
         let offset = self.stack_end - self.reversed.len();
         log::debug!("Offset = {offset:#08x}");
-        // let stack_pointer = self.stack.addr().get() + offset;
-        // log::debug!("sp = {stack_pointer:#08x}");
 
         unsafe {
             copy_nonoverlapping(

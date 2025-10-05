@@ -76,7 +76,6 @@ pub fn load_pie(
                 MapFlags::MAP_PRIVATE | MapFlags::MAP_FIXED,
             )?
         };
-
         log::debug!(
             "Loading PT_LOAD at map={:#08x}, vaddr={vaddr:#08x}",
             mapping.addr().get()
@@ -113,11 +112,67 @@ pub fn load_pie(
     Ok((base_addr, interp_addr))
 }
 
+// A non-pie file will have a base address of 0 because the entry point of the
+// non-pie file will be a virtual address
 pub fn load_non_pie(
-    _file: &ElfFile,
-    _interp_addr: Option<(usize, usize)>,
+    file: &ElfFile,
+    interp_addr: Option<(usize, usize)>,
 ) -> Result<(usize, Option<(usize, usize)>)> {
-    unimplemented!()
+    // TODO: get these closures to be returned by a function somewhere
+    let page_size: usize = nix::unistd::sysconf(nix::unistd::SysconfVar::PAGE_SIZE)?
+        .ok_or(anyhow!("No PAGE_SIZE given"))?
+        .try_into()?;
+    let page_floor = move |addr: usize| addr & !(page_size - 1);
+    let page_ceil = move |addr: usize| page_floor(addr + page_size - 1);
+
+    for segment in &file.segments {
+        let vaddr: usize = segment.header.p_vaddr.try_into()?;
+        let memsz: usize = segment.header.p_memsz.try_into()?;
+        let aligned = page_floor(vaddr);
+        let align_diff = vaddr - aligned;
+        let map_length = page_ceil(memsz + align_diff);
+        let aligned_addr = NonZeroUsize::new(aligned).ok_or(anyhow!("Invalid aligned_addr"))?;
+        let length = NonZeroUsize::new(map_length).ok_or(anyhow!("Invalid map_length"))?;
+        let mapping = unsafe {
+            mmap_anonymous(
+                Some(aligned_addr),
+                length,
+                ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
+                MapFlags::MAP_PRIVATE | MapFlags::MAP_FIXED,
+            )?
+        };
+        log::debug!(
+            "Loading PT_LOAD at map={:#08x}, vaddr={vaddr:#08x}",
+            mapping.addr().get()
+        );
+
+        if segment.header.p_filesz > 0 {
+            let dst = unsafe { mapping.add(align_diff) };
+            assert!(dst.addr().get() == vaddr);
+            unsafe {
+                copy_nonoverlapping(
+                    segment.data.as_ptr(),
+                    dst.as_ptr() as *mut u8,
+                    segment.data.len(),
+                );
+            }
+        }
+
+        // adjust permissions TODO: make this a function for a new segment
+        let mut prot = ProtFlags::PROT_NONE;
+        if segment.header.p_flags & PF_R != 0 {
+            prot |= ProtFlags::PROT_READ;
+        }
+        if segment.header.p_flags & PF_W != 0 {
+            prot |= ProtFlags::PROT_WRITE;
+        }
+        if segment.header.p_flags & PF_X != 0 {
+            prot |= ProtFlags::PROT_EXEC;
+        }
+        unsafe { mprotect(mapping, map_length, prot)? }
+    }
+
+    Ok((0, interp_addr))
 }
 
 pub fn exec(file: &ElfFile, args: &[String], path: &str) -> Result<()> {

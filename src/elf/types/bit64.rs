@@ -104,7 +104,6 @@ pub fn parse_elf64(elf_bytes: &[u8]) -> Result<ElfFile> {
                     elf_bytes[start..start + p_header.p_filesz as usize].to_vec(),
                 )
                 .map_err(|_| anyhow!("Unable to retrieve interpreter string"))?;
-
                 log::debug!(
                     "PT_INTERP at offset 0x{:08x}: interpreter set as {:?}",
                     p_header.p_offset,
