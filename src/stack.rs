@@ -314,7 +314,16 @@ impl<'a> Stack<'a> {
         // build out the auxv strings needed
         let at_platform_ptr = unsafe { getauxval(AT_PLATFORM) };
         // convert the pointer to a CString
-        let at_platform_str = unsafe { CStr::from_ptr(at_platform_ptr as *const i8) };
+        let at_platform_str = {
+            #[cfg(target_arch = "x86_64")]
+            {
+                unsafe { CStr::from_ptr(at_platform_ptr as *const i8) }
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                unsafe { CStr::from_ptr(at_platform_ptr as *const u8) }
+            }
+        };
         let at_platform_addr = self.push_string(at_platform_str);
 
         let at_random_ptr = unsafe { getauxval(AT_RANDOM) };

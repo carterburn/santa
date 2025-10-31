@@ -193,6 +193,7 @@ pub fn exec(file: &ElfFile, args: &[String], path: &str) -> Result<()> {
     unsafe { run(entry, sp) }
 }
 
+#[cfg(target_arch = "x86_64")]
 unsafe fn run(entry: usize, sp: usize) -> ! {
     unsafe {
         asm! {
@@ -204,4 +205,17 @@ unsafe fn run(entry: usize, sp: usize) -> ! {
         }
     }
     unreachable!();
+}
+
+#[cfg(target_arch = "aarch64")]
+unsafe fn run(entry: usize, sp: usize) -> ! {
+    unsafe {
+        asm! {
+            "mov sp, {sp}",
+            "br {entry}",
+            sp = in(reg) sp,
+            entry = in(reg) entry,
+        }
+    }
+    unreachable!()
 }

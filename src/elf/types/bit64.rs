@@ -70,7 +70,7 @@ pub fn parse_elf64(elf_bytes: &[u8]) -> Result<ElfFile> {
     }
 
     if !matches!(header.e_machine, ElfMachine::X86_64 | ElfMachine::AArch64) {
-        return Err(anyhow!("ELF machinei not is not supported"));
+        return Err(anyhow!("ELF machine Is not supported"));
     }
 
     let mut segments = vec![];

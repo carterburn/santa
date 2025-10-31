@@ -145,10 +145,10 @@ impl ElfFile {
         };
 
         match (class, data) {
-            (ElfClass::Elf32, ElfData::LittleEndian) => todo!(),
-            (ElfClass::Elf32, ElfData::BigEndian) => todo!(),
+            (ElfClass::Elf32, ElfData::LittleEndian) => unimplemented!(),
+            (ElfClass::Elf32, ElfData::BigEndian) => unimplemented!(),
             (ElfClass::Elf64, ElfData::LittleEndian) => parse_elf64(elf_bytes),
-            (ElfClass::Elf64, ElfData::BigEndian) => todo!(),
+            (ElfClass::Elf64, ElfData::BigEndian) => unimplemented!(),
         }
     }
 

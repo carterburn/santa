@@ -3,45 +3,62 @@ use std::{
     fs,
     io::{self, Read},
 };
-use ureq::http::StatusCode;
 
-use clap::Parser;
 use env_logger::Env;
 use santa::{
-    cli::Cli,
     elf::ElfFile,
     exec::{self},
 };
 
+fn parse_args() -> (String, Vec<String>) {
+    let mut args = std::env::args();
+    // binary path skip over
+    let _ = args.next();
+    let Some(path) = args.next() else {
+        panic!("Error: provide binary to load");
+    };
+    (path, args.collect())
+}
+
+#[cfg(feature = "web_request")]
+fn retrieve_binary_from_web(binary: &str) -> Result<(&str, Vec<u8>)> {
+    use ureq::http::StatusCode;
+    log::debug!("Downloading from {}", binary);
+    let response = ureq::get(binary).call()?;
+    let (parts, body) = response.into_parts();
+    if !matches!(parts.status, StatusCode::OK) {
+        return Err(anyhow!(
+            "Error retrieving binary. HTTP status: {}",
+            parts.status
+        ));
+    }
+    let mut bytes = Vec::new();
+    body.into_reader().read_to_end(&mut bytes)?;
+    Ok((
+        binary
+            .split("/")
+            .last()
+            .ok_or(anyhow!("No binary provided"))?,
+        bytes,
+    ))
+}
+
 fn main() -> Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    let args = Cli::parse();
+    let (binary, args) = parse_args();
 
-    let (path, bytes) = if args.fetch {
-        log::debug!("Downloading from {}", args.binary);
-        if !args.binary.starts_with("http://") && !args.binary.starts_with("https://") {
-            return Err(anyhow!("Only http/https URIs allowed"));
+    let (path, bytes) = if binary.starts_with("http") {
+        #[cfg(feature = "web_request")]
+        {
+            retrieve_binary_from_web(&binary)?
         }
-        let response = ureq::get(&args.binary).call()?;
-        let (parts, body) = response.into_parts();
-        if !matches!(parts.status, StatusCode::OK) {
-            return Err(anyhow!(
-                "Error retrieving binary. HTTP status: {}",
-                parts.status
-            ));
+        #[cfg(not(feature = "web_request"))]
+        {
+            return Err(anyhow!("Cannot make web requests"));
         }
-        let mut bytes = Vec::new();
-        body.into_reader().read_to_end(&mut bytes)?;
-        (
-            args.binary
-                .split("/")
-                .last()
-                .ok_or(anyhow!("No binary provided"))?,
-            bytes,
-        )
     } else {
-        match args.binary.as_str() {
+        match binary.as_str() {
             "-" => {
                 log::debug!("Reading from stdin");
 
@@ -57,7 +74,7 @@ fn main() -> Result<()> {
     };
 
     let elf = ElfFile::new(&bytes)?;
-    exec::exec(&elf, &args.args, path)?;
+    exec::exec(&elf, &args, path)?;
 
     Ok(())
 }
