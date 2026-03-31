@@ -1,15 +1,18 @@
 use anyhow::{anyhow, Result};
 use nix::{
-    libc::memset,
+    libc::{
+        getauxval, AT_BASE, AT_CLKTCK, AT_EGID, AT_ENTRY, AT_EUID, AT_EXECFN, AT_FLAGS, AT_GID,
+        AT_HWCAP, AT_NULL, AT_PAGESZ, AT_PHDR, AT_PHENT, AT_PHNUM, AT_PLATFORM, AT_RANDOM,
+        AT_SECURE, AT_UID,
+    },
     sys::mman::{mmap_anonymous, MapFlags, ProtFlags},
-    unistd::{getegid, geteuid, getgid, getuid},
+    unistd::{getegid, geteuid, getgid, getuid, sysconf, SysconfVar},
 };
 use std::{
-    collections::HashMap,
-    ffi::{c_void, CString},
+    ffi::{CStr, CString},
     fmt::Display,
     num::NonZeroUsize,
-    ptr::NonNull,
+    ptr::copy_nonoverlapping,
 };
 
 use crate::elf::ElfFile;
@@ -161,214 +164,209 @@ impl From<AuxValues> for usize {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum StackOffsets {
-    OffsetAtBase = 1,
-    OffsetAtPhdr = 3,
-    OffsetAtEntry = 5,
+pub struct Stack<'a> {
+    binary_addr: usize,
+    interp: Option<(usize, usize)>,
+    file: &'a ElfFile,
+    path: &'a str,
+    args: &'a [String],
+    stack_end: usize,
+    reversed: Vec<u8>,
 }
 
-impl From<StackOffsets> for usize {
-    fn from(value: StackOffsets) -> Self {
-        use StackOffsets::*;
-        match value {
-            OffsetAtBase => 1,
-            OffsetAtPhdr => 3,
-            OffsetAtEntry => 5,
-        }
-    }
-}
-
-pub struct Stack {
-    base: NonNull<c_void>,
-    stack: &'static mut [usize],
-    is_32bit: bool,
-    auxv_start: usize,
-}
-
-impl Stack {
-    pub fn new(num_pages: usize, is_32bit: bool) -> Result<Self> {
-        let page_size: usize = Self::get_page_size()?;
-        let size = page_size * num_pages;
-        let mut base = unsafe {
+impl<'a> Stack<'a> {
+    pub fn new(
+        binary_addr: usize,
+        interp: Option<(usize, usize)>,
+        file: &'a ElfFile,
+        path: &'a str,
+        args: &'a [String],
+    ) -> Self {
+        let length = 8 * 1024 * 1024;
+        let stack = unsafe {
             mmap_anonymous(
                 None,
-                NonZeroUsize::new(size).ok_or_else(|| anyhow!("A zero size was specified"))?,
-                ProtFlags::PROT_READ | ProtFlags::PROT_WRITE | ProtFlags::PROT_EXEC,
-                MapFlags::MAP_PRIVATE | MapFlags::MAP_GROWSDOWN,
-            )?
-        };
-        log::debug!("Initial base: {base:08x?}");
-
-        unsafe { memset(base.as_mut(), 0, size) };
-
-        base = unsafe { base.add(size - page_size) };
-        // create an array from this base address
-        let stack = unsafe {
-            std::slice::from_raw_parts_mut(
-                base.as_ptr() as *mut usize,
-                page_size / size_of::<usize>(),
+                NonZeroUsize::new(length).unwrap(),
+                ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
+                MapFlags::MAP_PRIVATE | MapFlags::MAP_GROWSDOWN | MapFlags::MAP_STACK,
             )
-        };
-
-        log::debug!("Stack allocated at {base:08x?} ({:08x?})", stack.as_ptr());
-
-        Ok(Self {
-            base,
-            stack,
-            is_32bit,
-            auxv_start: 0,
-        })
-    }
-
-    pub fn raw_stack(&mut self) -> &mut [usize] {
-        self.stack
-    }
-
-    pub fn base(&self) -> NonNull<c_void> {
-        self.base
-    }
-
-    pub fn get_page_size() -> Result<usize> {
-        Ok(nix::unistd::sysconf(nix::unistd::SysconfVar::PAGE_SIZE)?
-            .ok_or_else(|| anyhow!("Could not retrieve system page size"))?
-            .try_into()?)
-    }
-
-    pub fn setup(
-        &mut self,
-        argv: &Vec<CString>,
-        envp: &Vec<CString>,
-        exe: &ElfFile,
-        platform: &str,
-        show_stack: bool,
-    ) -> Result<()> {
-        self.stack[0] = argv.len();
-        let mut i = 1;
-        for arg in argv {
-            self.stack[i] = arg.as_ptr().addr();
-            i += 1;
         }
-        self.stack[i + 1] = 0;
-        let env_off = i + 1;
+        .unwrap();
+        log::debug!("Allocated stack at {stack:#08x?}");
 
-        i = 0;
-        for env in envp {
-            self.stack[env_off + i] = env.as_ptr().addr();
-            i += 1;
+        let stack_end = stack.addr().get() + length;
+        log::debug!("Stack end: {stack_end:#08x}");
+
+        Self {
+            binary_addr,
+            interp,
+            file,
+            path,
+            args,
+            stack_end,
+            reversed: Vec::new(),
         }
-        self.stack[env_off + i] = 0;
-        i += 1;
-
-        let aux_off = i + env_off;
-        self.auxv_start = aux_off << (if self.is_32bit { 2 } else { 3 });
-        let end_off = self.setup_auxv(aux_off, exe, platform)?;
-
-        log::debug!("end_off: {end_off}");
-        self.show_stack(env_off, aux_off, end_off, show_stack)
     }
 
-    pub fn auxv_start(&self) -> usize {
-        self.auxv_start
+    fn push_bytes(&mut self, bytes: &[u8]) -> usize {
+        for b in bytes.iter().rev() {
+            self.reversed.push(*b);
+        }
+        self.stack_end - self.reversed.len()
     }
 
-    fn show_stack(
-        &self,
-        env_off: usize,
-        aux_off: usize,
-        end_off: usize,
-        show_stack: bool,
-    ) -> Result<()> {
-        if !show_stack {
-            return Ok(());
+    fn push_string(&mut self, s: &CStr) -> usize {
+        self.push_bytes(s.to_bytes_with_nul())
+    }
+
+    fn push_usize(&mut self, val: usize) -> usize {
+        self.push_bytes(&val.to_ne_bytes())
+    }
+
+    fn push_envp(&mut self) -> Vec<usize> {
+        // Push the environment variable strings
+        let envp: Vec<CString> = std::env::vars()
+            .filter_map(|(key, value)| CString::new(format!("{}={}", key, value)).ok())
+            .collect();
+        let mut envp_addrs = Vec::with_capacity(envp.len());
+        for e in &envp {
+            envp_addrs.push(self.push_string(e));
         }
-        log::debug!("stack contents:");
-        for i in 0..aux_off {
-            log::debug!(
-                " {:08x}:   0x{:016x} ({})",
-                i * 8,
-                self.stack[i],
-                if i < env_off { "argv" } else { "envp" }
-            );
+        envp_addrs
+    }
+
+    fn push_argv(&mut self, path_addr: usize) -> Vec<usize> {
+        let argv: Vec<CString> = self
+            .args
+            .iter()
+            .filter_map(|arg| CString::new(arg.clone()).ok())
+            .collect();
+        let mut argv_addrs = Vec::with_capacity(argv.len() + 1);
+        for a in argv.iter().rev() {
+            argv_addrs.push(self.push_string(a));
+        }
+        // push the path address as the last arg
+        argv_addrs.push(path_addr);
+        argv_addrs
+    }
+
+    fn push_auxv(&mut self, path_addr: usize, at_platform: usize, at_random: usize) -> Result<()> {
+        let clktck: usize = (sysconf(SysconfVar::CLK_TCK)?)
+            .unwrap_or_default()
+            .try_into()?;
+        let page_size = (sysconf(SysconfVar::PAGE_SIZE)?)
+            .unwrap_or_default()
+            .try_into()?;
+
+        let e_entry: usize = self.file.header.e_entry.try_into()?;
+        let mut e_phoff: usize = self.file.header.e_phoff.try_into()?;
+        if self.binary_addr == 0 {
+            // adjust ph_off if we have a non-pie binary
+            let start: usize = self
+                .file
+                .segments
+                .first()
+                .ok_or(anyhow!("No segments"))?
+                .header
+                .p_vaddr
+                .try_into()?;
+            e_phoff += start;
         }
 
-        for i in (aux_off..end_off).step_by(2) {
-            log::debug!(
-                " {:08x}:   0x{:016x} 0x{:016x} ({})",
-                i * 8,
-                self.stack[i],
-                self.stack[i + 1],
-                AuxValues::from(self.stack[i] as u64),
-            )
+        let auxv_rev = [
+            (AT_NULL, 0),
+            (AT_PLATFORM, at_platform),
+            (AT_EXECFN, path_addr),
+            (AT_SECURE, unsafe { getauxval(AT_SECURE).try_into()? }),
+            (AT_RANDOM, at_random),
+            (AT_CLKTCK, clktck),
+            (AT_HWCAP, unsafe { getauxval(AT_HWCAP).try_into()? }),
+            (AT_EGID, getegid().as_raw().try_into()?),
+            (AT_GID, getgid().as_raw().try_into()?),
+            (AT_EUID, geteuid().as_raw().try_into()?),
+            (AT_UID, getuid().as_raw().try_into()?),
+            (AT_ENTRY, self.binary_addr + e_entry),
+            (AT_FLAGS, 0),
+            (AT_BASE, self.interp.unwrap_or_default().0),
+            (AT_PAGESZ, page_size),
+            (AT_PHNUM, self.file.header.e_phnum.into()),
+            (AT_PHENT, self.file.header.e_phentsize.into()),
+            (AT_PHDR, self.binary_addr + e_phoff),
+        ];
+
+        for (aux, value) in &auxv_rev {
+            let aux: usize = (*aux).try_into()?;
+            self.push_usize(*value);
+            self.push_usize(aux);
         }
 
         Ok(())
     }
 
-    fn setup_auxv(&mut self, mut aux_off: usize, exe: &ElfFile, platform: &str) -> Result<usize> {
-        let auxv_keys = vec![
-            AuxValues::AtSysinfoEhdr.into(),
-            AuxValues::AtSysinfo.into(),
-            AuxValues::AtClktck.into(),
-            AuxValues::AtHwcap.into(),
-            AuxValues::AtHwcap2.into(),
-        ];
-        let auxvs: HashMap<AuxValues, u64> = auxv::procfs::search_procfs_auxv(auxv_keys.as_slice())
-            .unwrap_or_default()
-            .iter()
-            .map(|(key, value)| ((*key).into(), *value))
-            .collect();
+    pub fn make(&mut self) -> Result<usize> {
+        // Push the path of the binary to the base of the stack
+        let p: CString = CString::new(self.path)?;
+        let path_addr = self.push_string(&p);
 
-        // the value at self.stack[1]
-        let at_execfn = self.stack[1];
-        let aux_start = unsafe { self.base.add(aux_off).addr() };
+        let envp_addrs = self.push_envp();
+        let argv_addrs = self.push_argv(path_addr);
 
-        let mut auxv: Vec<(AuxValues, usize)> = vec![
-            (AuxValues::AtBase, 0x0),
-            (AuxValues::AtPhdr, 0x0),
-            (AuxValues::AtEntry, 0x0),
-            (AuxValues::AtPhnum, exe.header.e_phnum.into()),
-            (AuxValues::AtPhent, exe.header.e_phentsize.into()),
-            (AuxValues::AtPagesz, Self::get_page_size()?),
-            (AuxValues::AtSecure, 0),
-            (AuxValues::AtRandom, aux_start.get()), // XXX now just points to start of aux
-            (
-                AuxValues::AtSysinfo,
-                (*(auxvs.get(&AuxValues::AtSysinfo).unwrap_or(&0))).try_into()?,
-            ),
-            (
-                AuxValues::AtSysinfoEhdr,
-                (*(auxvs.get(&AuxValues::AtSysinfoEhdr).unwrap_or(&0))).try_into()?,
-            ),
-            (AuxValues::AtPlatform, platform.as_ptr().addr()),
-            (AuxValues::AtExecfn, at_execfn),
-            (AuxValues::AtUid, getuid().as_raw().try_into()?),
-            (AuxValues::AtEuid, geteuid().as_raw().try_into()?),
-            (AuxValues::AtGid, getgid().as_raw().try_into()?),
-            (AuxValues::AtEgid, getegid().as_raw().try_into()?),
-        ];
+        // build out the auxv strings needed
+        let at_platform_ptr = unsafe { getauxval(AT_PLATFORM) };
+        // convert the pointer to a CString
+        let at_platform_str = {
+            #[cfg(target_arch = "x86_64")]
+            {
+                unsafe { CStr::from_ptr(at_platform_ptr as *const i8) }
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                unsafe { CStr::from_ptr(at_platform_ptr as *const u8) }
+            }
+        };
+        let at_platform_addr = self.push_string(at_platform_str);
 
-        if let Some(clktck) = auxvs.get(&AuxValues::AtClktck) {
-            auxv.push((AuxValues::AtClktck, (*clktck).try_into()?));
+        let at_random_ptr = unsafe { getauxval(AT_RANDOM) };
+        let at_random_bytes = unsafe { std::slice::from_raw_parts(at_random_ptr as _, 16) };
+        let at_random_addr = self.push_bytes(at_random_bytes);
+
+        //     strings                 # of env           # of args      # 2 nulls + argc
+        while (self.reversed.len() + (envp_addrs.len() + argv_addrs.len() + 3) * size_of::<usize>())
+            % 16
+            != 0
+        {
+            self.reversed.push(0);
         }
 
-        if let Some(hwcap) = auxvs.get(&AuxValues::AtHwcap) {
-            auxv.push((AuxValues::AtHwcap, (*hwcap).try_into()?));
+        self.push_auxv(path_addr, at_platform_addr, at_random_addr)?;
+
+        // push the envp addresses with a null value in-between
+        self.push_usize(0);
+        for addr in envp_addrs {
+            self.push_usize(addr);
         }
 
-        if let Some(hwcap2) = auxvs.get(&AuxValues::AtHwcap2) {
-            auxv.push((AuxValues::AtHwcap2, (*hwcap2).try_into()?));
+        self.push_usize(0);
+        for addr in argv_addrs {
+            self.push_usize(addr);
         }
 
-        auxv.push((AuxValues::AtNull, 0));
+        // add one for path to binary
+        self.push_usize(self.args.len() + 1);
 
-        for (aux_type, aux_val) in auxv {
-            self.stack[aux_off] = aux_type.into();
-            self.stack[aux_off + 1] = aux_val;
-            aux_off += 2;
+        // reverse the stack
+        self.reversed.reverse();
+        let offset = self.stack_end - self.reversed.len();
+        log::debug!("Offset = {offset:#08x}");
+
+        unsafe {
+            copy_nonoverlapping(
+                self.reversed.as_ptr(),
+                offset as *mut u8,
+                self.reversed.len(),
+            )
         }
-        aux_off -= 1;
 
-        Ok(aux_off)
+        Ok(offset)
     }
 }

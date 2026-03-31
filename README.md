@@ -4,10 +4,10 @@ Santa is an in-memory ELF loader that implements userland `execve` functionality
 
 ## Features
 
-- Load ELF binaries from files, stdin, or remote URLs
+- Load ELF binaries from files, stdin, or URLs
 - Execute binaries entirely in memory (userland execve)
-- Debug support with jump delays and stack inspection
-- Cross-platform compatibility
+- Optional `web_request` feature flag for fetching binaries over HTTP/HTTPS (via `ureq`)
+- Minimal dependencies for a small binary footprint
 - Zero disk footprint execution
 
 ## Installation
@@ -17,7 +17,7 @@ Santa is an in-memory ELF loader that implements userland `execve` functionality
 Clone the repository:
 
 ```bash
-git clone https://github.com/username/santa.git
+git clone https://github.com/carterburn/santa.git
 cd santa
 ```
 
@@ -43,6 +43,16 @@ cargo build --release
 
 The release binary will be located at `target/release/santa`.
 
+#### Building with Web Request Support
+
+To enable fetching binaries from HTTP/HTTPS URLs, build with the `web_request` feature flag:
+
+```bash
+cargo build --release --features web_request
+```
+
+Without this feature, attempting to load a binary from a URL will return an error.
+
 #### Install System-wide
 
 To install santa to your system PATH:
@@ -54,33 +64,29 @@ cargo install --path .
 Or install directly from GitHub:
 
 ```bash
-cargo install --git https://github.com/username/santa.git
+cargo install --git https://github.com/carterburn/santa.git
+```
+
+To install with web request support, add the `--features` flag:
+
+```bash
+cargo install --path . --features web_request
+# OR (from GitHub)...
+cargo install --git https://github.com/carterburn/santa.git --features web_request
 ```
 
 ## Usage
 
 ```
-In-memory ELF loader (userland execve)
-
-Usage: santa [OPTIONS] <BINARY> [ARGS]...
-
-Arguments:
-  <BINARY>   Binary to load (can be a filepath, "-" for stdin, or a URI with --fetch option)
-  [ARGS]...  Arguments to the binary
-
-Options:
-  -d, --jump-delay <JUMP_DELAY>  Delay jump to loaded ELF for <JUMP_DELAY> seconds for debugging
-  -j, --show-jumpbuf             Show jumpbuffer using objdump to a temporary file
-  -s, --show-stack               Show stack contents after preparing
-  -f, --fetch                    Treat binary as a URI to fetch a binary
-  -h, --help                     Print help
+santa <BINARY> [ARGS]...
 ```
+
+- `<BINARY>` — Path to an ELF binary, `-` for stdin, or an HTTP/HTTPS URL (requires `web_request` feature)
+- `[ARGS]...` — Arguments passed to the loaded binary
 
 ## Examples
 
-### Basic Usage
-
-Execute a local ELF binary:
+### Load a local binary
 
 ```bash
 santa /bin/ls -la /tmp
@@ -88,59 +94,30 @@ santa /bin/ls -la /tmp
 
 ### Load from stdin
 
-Pipe a binary through stdin:
-
 ```bash
 cat /bin/echo | santa - "Hello, World!"
 ```
 
 ### Fetch from URL
 
-Download and execute a binary from a remote URL:
+Requires building with `--features web_request`:
 
 ```bash
-santa --fetch https://example.com/path/to/binary arg1 arg2
-```
-
-### Debug Mode
-
-Execute with a 5-second delay for debugger attachment:
-
-```bash
-santa --jump-delay 5 /bin/ls -la
-```
-
-### Inspection Options
-
-Show stack contents and jumpbuffer information:
-
-```bash
-santa --show-stack --show-jumpbuf /bin/echo "test"
-```
-
-### Combined Options
-
-Fetch a remote binary with debugging enabled:
-
-```bash
-santa --fetch --jump-delay 3 --show-stack https://example.com/binary
+santa https://example.com/path/to/binary arg1 arg2
 ```
 
 ## Development
 
 ### Prerequisites
 
-- Rust 1.70+ (2021 edition)
-- Linux/Unix-like system (for ELF support)
+- Rust (2024 edition)
+- Linux (for ELF support)
 
 ### Building for Development
 
 ```bash
-# Debug build with full logging
+# Debug build with logging
 RUST_LOG=debug cargo build
-
-# Run tests
-cargo test
 
 # Run with logging
 RUST_LOG=info cargo run -- /bin/echo "test"
@@ -153,6 +130,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - Inspired by userland exec research and in-memory loading techniques
+- Inspired by [userland-execve-rust](https://github.com/io12/userland-execve-rust) by Benjamin Levy
 - Inspired heavily by the python implementation of [ulexecve](https://github.com/anvilsecure/ulexecve/tree/main). Their implementation is heavily inspired by previous userland exec approachs (such as grugq's The Design and Implementation of Userland Exec and Phrack 62). The code is generally modeled after the python version but this implementation is original and written in Rust (except the assembly snippets where credit is given).
 - Built with Rust's memory safety guarantees for secure execution
 - Thanks to the ELF specification maintainers and reverse engineering community
